@@ -33,6 +33,7 @@ type Master struct {
 	// ADD EXTRA PROPERTIES HERE //
 	///////////////////////////////
 	// Fault Tolerance
+	failedOpsChan chan *Operation
 }
 
 type Operation struct {
@@ -48,6 +49,7 @@ func newMaster(address string) (master *Master) {
 	master.workers = make(map[int]*RemoteWorker, 0)
 	master.idleWorkerChan = make(chan *RemoteWorker, IDLE_WORKER_BUFFER)
 	master.failedWorkerChan = make(chan *RemoteWorker, IDLE_WORKER_BUFFER)
+	master.failedOpsChan = make(chan *Operation, IDLE_WORKER_BUFFER)
 	master.totalWorkers = 0
 	return
 }

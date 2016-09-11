@@ -18,9 +18,12 @@ func (master *Master) schedule(task *Task, proc string, filePathChan chan string
 		worker    *RemoteWorker
 		operation *Operation
 		counter   int
+		done      chan struct{}
 	)
-
 	log.Printf("Scheduling %v operations\n", proc)
+
+	done = make(chan struct{})
+	go master.handleOperationFailures(&wg, done)
 
 	counter = 0
 	for filePath = range filePathChan {
@@ -33,6 +36,7 @@ func (master *Master) schedule(task *Task, proc string, filePathChan chan string
 	}
 
 	wg.Wait()
+	done <- struct{}{}
 
 	log.Printf("%vx %v operations completed\n", counter, proc)
 	return counter
@@ -47,7 +51,6 @@ func (master *Master) runOperation(remoteWorker *RemoteWorker, operation *Operat
 	var (
 		err  error
 		args *RunArgs
-		worker    *RemoteWorker
 	)
 
 	log.Printf("Running %v (ID: '%v' File: '%v' Worker: '%v')\n", operation.proc, operation.id, operation.filePath, remoteWorker.id)
@@ -58,12 +61,28 @@ func (master *Master) runOperation(remoteWorker *RemoteWorker, operation *Operat
 	if err != nil {
 		log.Printf("Operation %v '%v' Failed. Error: %v\n", operation.proc, operation.id, err)
 		master.failedWorkerChan <- remoteWorker
-		worker = <- master.idleWorkerChan
-		// wg.Add(1)
-		go master.runOperation(worker, operation, wg)
+
+		master.failedOpsChan <- operation
 		//wg.Done()
 	} else {
 		wg.Done()
 		master.idleWorkerChan <- remoteWorker
+	}
+}
+
+func (master *Master) handleOperationFailures(wg *sync.WaitGroup, done chan struct{}) {
+	var (
+		worker 	*RemoteWorker
+		op  	*Operation
+	)
+
+	for {
+		select {
+		case op = <- master.failedOpsChan:
+			worker = <- master.idleWorkerChan
+			go master.runOperation(worker, op, wg)
+		case <- done:
+			return
+		}
 	}
 }
